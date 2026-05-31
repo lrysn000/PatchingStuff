@@ -214,6 +214,28 @@ def test_add_template_filter_with_name_and_template(app, client):
     assert rv.data == b"dcba"
 
 
+def test_template_filter_no_parens(app):
+    @app.template_filter
+    def my_reverse(s):
+        return s[::-1]
+
+    assert "my_reverse" in app.jinja_env.filters
+    assert app.jinja_env.filters["my_reverse"]("abcd") == "dcba"
+
+
+def test_template_filter_no_parens_with_template(app, client):
+    @app.template_filter
+    def super_reverse(s):
+        return s[::-1]
+
+    @app.route("/")
+    def index():
+        return flask.render_template("template_filter.html", value="abcd")
+
+    rv = client.get("/")
+    assert rv.data == b"dcba"
+
+
 def test_template_test(app):
     @app.template_test()
     def boolean(value):

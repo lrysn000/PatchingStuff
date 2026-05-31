@@ -1,0 +1,84 @@
+﻿# Fix: Support @app.template_filter without parentheses
+#
+# Problem: template_filter() is a decorator factory - it always returns an inner
+# decorator. When used as @app.template_filter (no parens), Python passes the
+# decorated function as the `name` argument. The inner decorator is returned but
+# never called, so the filter is silently never registered with Jinja2.
+#
+# Fix: In sansio/app.py, check if `name` is callable at the start of
+# template_filter(). If so, the decorator is being used without parentheses -
+# register the filter immediately and return the function unchanged.
+# Otherwise, fall through to the original factory behaviour.
+#
+# Verified: pytest tests/test_templating.py - 34 passed (32 existing + 2 new).
+# New tests: test_template_filter_no_parens, test_template_filter_no_parens_with_template
+diff --git a/issue-c/flask/src/flask/sansio/app.py b/issue-c/flask/src/flask/sansio/app.py
+index 745fe63..7abae94 100644
+--- a/issue-c/flask/src/flask/sansio/app.py
++++ b/issue-c/flask/src/flask/sansio/app.py
+@@ -662,8 +662,8 @@ class App(Scaffold):
+ 
+     @setupmethod
+     def template_filter(
+-        self, name: str | None = None
+-    ) -> t.Callable[[T_template_filter], T_template_filter]:
++        self, name: str | ft.TemplateFilterCallable | None = None
++    ) -> t.Any:
+         """A decorator that is used to register custom template filter.
+         You can specify a name for the filter, otherwise the function
+         name will be used. Example::
+@@ -672,12 +672,20 @@ class App(Scaffold):
+           def reverse(s):
+               return s[::-1]
+ 
++          @app.template_filter
++          def reverse(s):
++              return s[::-1]
++
+         :param name: the optional name of the filter, otherwise the
+                      function name will be used.
+         """
++        if callable(name):
++            f: ft.TemplateFilterCallable = name
++            self.add_template_filter(f)
++            return f
+ 
+         def decorator(f: T_template_filter) -> T_template_filter:
+-            self.add_template_filter(f, name=name)
++            self.add_template_filter(f, name=name)  # type: ignore[arg-type]
+             return f
+ 
+         return decorator
+diff --git a/issue-c/flask/tests/test_templating.py b/issue-c/flask/tests/test_templating.py
+index c9fb375..af10352 100644
+--- a/issue-c/flask/tests/test_templating.py
++++ b/issue-c/flask/tests/test_templating.py
+@@ -214,6 +214,28 @@ def test_add_template_filter_with_name_and_template(app, client):
+     assert rv.data == b"dcba"
+ 
+ 
++def test_template_filter_no_parens(app):
++    @app.template_filter
++    def my_reverse(s):
++        return s[::-1]
++
++    assert "my_reverse" in app.jinja_env.filters
++    assert app.jinja_env.filters["my_reverse"]("abcd") == "dcba"
++
++
++def test_template_filter_no_parens_with_template(app, client):
++    @app.template_filter
++    def super_reverse(s):
++        return s[::-1]
++
++    @app.route("/")
++    def index():
++        return flask.render_template("template_filter.html", value="abcd")
++
++    rv = client.get("/")
++    assert rv.data == b"dcba"
++
++
+ def test_template_test(app):
+     @app.template_test()
+     def boolean(value):

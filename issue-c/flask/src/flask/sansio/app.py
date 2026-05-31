@@ -662,8 +662,8 @@ class App(Scaffold):
 
     @setupmethod
     def template_filter(
-        self, name: str | None = None
-    ) -> t.Callable[[T_template_filter], T_template_filter]:
+        self, name: str | ft.TemplateFilterCallable | None = None
+    ) -> t.Any:
         """A decorator that is used to register custom template filter.
         You can specify a name for the filter, otherwise the function
         name will be used. Example::
@@ -672,12 +672,20 @@ class App(Scaffold):
           def reverse(s):
               return s[::-1]
 
+          @app.template_filter
+          def reverse(s):
+              return s[::-1]
+
         :param name: the optional name of the filter, otherwise the
                      function name will be used.
         """
+        if callable(name):
+            f: ft.TemplateFilterCallable = name
+            self.add_template_filter(f)
+            return f
 
         def decorator(f: T_template_filter) -> T_template_filter:
-            self.add_template_filter(f, name=name)
+            self.add_template_filter(f, name=name)  # type: ignore[arg-type]
             return f
 
         return decorator
